@@ -128,4 +128,5 @@ if [ "$1" = "run" ]; then
 fi
 
 echo "invalid command"
+# add comment
 exit 1
