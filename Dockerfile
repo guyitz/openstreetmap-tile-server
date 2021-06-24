@@ -1,7 +1,7 @@
-FROM ubuntu:20.04
+FROM ubuntu:18.04
 
 # Based on
-# https://switch2osm.org/serving-tiles/manually-building-a-tile-server-18-04-lts/
+# https://switch2osm.org/manually-building-a-tile-server-18-04-lts/
 
 # Set up environment
 ENV TZ=UTC
@@ -19,6 +19,7 @@ RUN apt-get update \
   && apt-get install -y nodejs
 
 RUN apt-get install -y --no-install-recommends \
+  osmctools \
   apache2 \
   apache2-dev \
   autoconf \
@@ -43,18 +44,20 @@ RUN apt-get install -y --no-install-recommends \
   libgdal-dev \
   libgeos++-dev \
   libgeos-dev \
+  libgeotiff-epsg \
   libicu-dev \
   liblua5.3-dev \
   libmapnik-dev \
   libpq-dev \
   libproj-dev \
-  libprotobuf-c-dev \
+  libprotobuf-c0-dev \
   libtiff5-dev \
   libtool \
   libxml2-dev \
   lua5.3 \
   make \
   mapnik-utils \
+  node-gyp \
   osmium-tool \
   osmosis \
   postgis \
@@ -77,7 +80,7 @@ RUN apt-get install -y --no-install-recommends \
 && rm -rf /var/lib/{apt,dpkg,cache,log}/
 
 # Set up PostGIS
-RUN wget https://download.osgeo.org/postgis/source/postgis-3.1.1.tar.gz -O postgis.tar.gz \
+RUN wget https://download.osgeo.org/postgis/source/postgis-3.0.0.tar.gz -O postgis.tar.gz \
  && mkdir -p postgis_src \
  && tar -xvzf postgis.tar.gz --strip 1 -C postgis_src \
  && rm postgis.tar.gz \
@@ -122,7 +125,7 @@ RUN mkdir -p /home/renderer/src \
 # Configure stylesheet
 RUN mkdir -p /home/renderer/src \
  && cd /home/renderer/src \
- && git clone --single-branch --branch v5.2.0 https://github.com/gravitystorm/openstreetmap-carto.git --depth 1 \
+ && git clone --single-branch --branch v4.23.0 https://github.com/gravitystorm/openstreetmap-carto.git --depth 1 \
  && cd openstreetmap-carto \
  && rm -rf .git \
  && npm install -g carto@0.18.2 \
@@ -145,6 +148,8 @@ RUN mkdir /var/lib/mod_tile \
  && a2enconf mod_tile && a2enconf mod_headers
 COPY apache.conf /etc/apache2/sites-available/000-default.conf
 COPY leaflet-demo.html /var/www/html/index.html
+COPY leaflet.css /var/www/html/leaflet.css
+COPY leaflet.js /var/www/html/leaflet.js
 RUN ln -sf /dev/stdout /var/log/apache2/access.log \
  && ln -sf /dev/stderr /var/log/apache2/error.log
 
@@ -168,13 +173,26 @@ RUN mkdir -p /home/renderer/src \
  && cd /home/renderer/src \
  && git clone https://github.com/zverik/regional \
  && cd regional \
- && git checkout 889d630a1e1a1bacabdd1dad6e17b49e7d58cd4b \
+ && git checkout 612fe3e040d8bb70d2ab3b133f3b2cfc6c940520 \
  && rm -rf .git \
  && chmod u+x /home/renderer/src/regional/trim_osc.py
 
-# Start running
-COPY run.sh /
+#Get Israel Latest Map osm file (for manipulation) 
+RUN wget https://download.geofabrik.de/asia/israel-and-palestine-latest.osm.bz2  \ 
+ && bzip2 -d  /israel-and-palestine-latest.osm.bz2 \
+ && osmfilter /israel-and-palestine-latest.osm --drop-tags="admin_level=2 admin_level=3 admin_level=4" -o=/filter_boundery_remove_admin_level_2_3_4.osm \
+ && rm -rf /israel-and-palestine-latest.osm \
+ && osmfilter /filter_boundery_remove_admin_level_2_3_4.osm  --modify-node-tags="name:he to name"  -o=/filter_boundery_remove_admin_level_and_change_to_heb_names.osm \
+ && rm -rf  /filter_boundery_remove_admin_level_2_3_4.osm \
+ && osmconvert /filter_boundery_remove_admin_level_and_change_to_heb_names.osm  --out-pbf -o=/data.osm.pbf \
+ && chmod 777 /data.osm.pbf \
+ && rm -rf   /filter_boundery_remove_admin_level_and_change_to_heb_names.osm 
 COPY indexes.sql /
+COPY run.sh /
+RUN /run.sh import
+
+
+# Start running
 ENTRYPOINT ["/run.sh"]
 CMD []
 
